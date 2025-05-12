@@ -21,6 +21,7 @@ from hailo_apps_infra.detection_pipeline import GStreamerDetectionApp
 
 Gst.init(None)
 
+# Logging
 ENABLE_DEBUG_LOGS = True
 
 log_file_path = "/tmp/person_detection_log.txt"
@@ -31,45 +32,52 @@ logging.getLogger().handlers = []
 logging.getLogger().addHandler(log_handler)
 logging.getLogger().setLevel(logging.INFO)
 
-LIGHT1_PINS = {"red": 17, "yellow": 27, "green": 22}
-LIGHT2_PINS = {"red": 23, "yellow": 24, "green": 25}
-LIGHT3_PINS = {"red": 5, "yellow": 6, "green": 13}
+# GPIO pin control
+LIGHT1_PINS = [17, 27, 22]
+LIGHT2_PINS = [23, 24, 25]
+LIGHT3_PINS = [5, 6, 13]
+
+GPIO.setmode(GPIO.BCM)
 
 class GPIORelayController:
     def __init__(self, pin_map):
         self.pin_map = pin_map
-        GPIO.setmode(GPIO.BCM)
-        for color, pin in self.pin_map.items():
+        for pin in self.pin_map:
             GPIO.setup(pin, GPIO.OUT)
-            GPIO.output(pin, GPIO.LOW)  # Start with all lights turned on
+            GPIO.output(pin, GPIO.HIGH)  # Start with all lights turned off
 
-    def turn_on(self, color):
+    def set_light(self, index, state):
         """Turns on the specific color light."""
-        self.turn_off_all()
-        GPIO.output(self.pin_map[color], GPIO.LOW)
+        if 0 <= index < len(self.pin_map):
+            GPIO.output(self.pin_map[index], state)
+        else:
+            print(f"Invalid index {index}")
 
-    def turn_off(self, color):
+    def light_off(self, index, state):
         """Turns off the specific color light."""
-        if color in self.pin_map:
-            GPIO.output(self.pin_map[color], GPIO.HIGH)
+        if 0 <= index < len(self.pin_map):
+            GPIO.output(self.pin_map[index], state)
+        else:
+            print(f"Invalid index: {index}")
+    
+    def all_off(self):
+        """Turns all lights in a traffic module off"""
+        for light in len(self.pin_map):
+            GPIO.output(self.pint_map[light], GPIO.HIGH)
 
-    def turn_off_all(self):
-        """Turns off all lights."""
-        for pin in self.pin_map.values():
-            GPIO.output(pin, GPIO.HIGH)
 
 class HailoDetectionApp(app_callback_class):
     def __init__(self):
         super().__init__()
 
+        self.light1 = GPIORelayController(LIGHT1_PINS)
+        self.light2 = GPIORelayController(LIGHT2_PINS)
+        self.light3 = GPIORelayController(LIGHT3_PINS)
+
         self.target_object = "person"
         self.confidence_threshold = 0.4
         self.detection_threshold = 4
         self.no_detection_threshold = 5
-
-        self.light1 = GPIORelayController(LIGHT1_PINS)
-        self.light2 = GPIORelayController(LIGHT2_PINS)
-        self.light3 = GPIORelayController(LIGHT3_PINS)
 
         self.detection_counter = 0
         self.no_detection_counter = 0
@@ -97,24 +105,25 @@ class HailoDetectionApp(app_callback_class):
             time.sleep(0.001)
 
     def turn_on_light1(self):
-        self.light1.turn_on("green")
-        self.light2.turn_off_all()
-        self.light3.turn_off_all()
+        self.light1.set_light(0, GPIO.LOW)
+        self.light1.set_light(1, GPIO.LOW)
+        self.light1.set_light(2, GPIO.LOW)
+        self.light2.all_off()
+        self.light3.all_off()
 
     def turn_on_light2(self):
-        self.light1.turn_off_all()
-        self.light2.turn_on("green")
-        self.light3.turn_off_all()
+        self.light2.set_light(0, GPIO.LOW)
+        self.light2.set_light(1, GPIO.LOW)
+        self.light2.set_light(2, GPIO.LOW)
+        self.light1.all_off()
+        self.light3.all_off()
 
     def turn_on_light3(self):
-        self.light1.turn_off_all()
-        self.light2.turn_off_all()
-        self.light3.turn_on("green")
-
-    def turn_off_all_lights(self):
-        self.light1.turn_off_all()
-        self.light2.turn_off_all()
-        self.light3.turn_off_all()
+        self.light3.set_light(0, GPIO.LOW)
+        self.light3.set_light(1, GPIO.LOW)
+        self.light1.set_light(2, GPIO.LOW)
+        self.light1.all_off()
+        self.light2.all_off()
 
     def update_led_based_on_count(self, count):
         if count == 0:
@@ -156,17 +165,16 @@ def app_callback(pad, info, user_data):
         if confidence > user_data.confidence_threshold and label == user_data.target_object:
             object_count += 1
         detection_details.append(f"{label} ({confidence:.2f})")
+        logging.info(
+            str(object_count), 
+            extra={
+                'frame': user_data.frame_count,
+                'led': f"Light1, Light2, Light3",
+                'objects': ', '.join(detection_details)
+                }
+                )
 
     user_data.current_person_count = object_count
-
-    logging.info(
-        str(object_count),
-        extra={
-            'frame': user_data.frame_count,
-            'led': f"Light1, Light2, Light3",
-            'objects': ', '.join(detection_details)
-        }
-    )
 
     if object_count >= 1:
         user_data.detection_counter += 1
@@ -195,6 +203,7 @@ def main():
         print(f"Error in main application: {e}")
     finally:
         user_data.shutdown_controllers()
+        GPIO.cleanup()
 
 if __name__ == "__main__":
     main()

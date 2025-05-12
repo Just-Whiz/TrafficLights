@@ -24,7 +24,7 @@ try:
             #time.sleep(0.5)
 
         # Example of accessing and controlling individual lights:
-        set_light(0, GPIO.HIGH)  # Turn on *************************************************************************light at index 0 (GPIO 17)
+        set_light(0, GPIO.HIGH)  # Turn on light at index 0 (GPIO 17)
         time.sleep(1)
         set_light(0, GPIO.LOW)   # Turn off light at index 0
         set_light(1, GPIO.HIGH) # Turn on light at index 1 (GPIO 27)
